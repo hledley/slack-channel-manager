@@ -4,43 +4,47 @@ import functools
 import json
 import re
 import time
-from os import getenv
 
 import click
-from dotenv import load_dotenv
 
+from slack_channel_manager.config import ConfigKey, ConfigManager, reload_config
 from slack_channel_manager.slack import (
-    get_slack_client,
-    get_slack_d_cookie,
+    SlackRequestClient,
+    fetch_d_cookie,
     get_slack_token,
 )
 
+################################################################################
+# Configuration
+################################################################################
+CONFIG = ConfigManager()
+
 
 ################################################################################
-# Environment Access
+# Helpers
 ################################################################################
 @functools.lru_cache()
-def _get_section_emoji() -> str:
-    if emoji := getenv("SECTION_EMOJI"):
-        return emoji
-
-    raise ValueError("No emoji found. Please set SECTION_EMOJI env variable")
-
-
-@functools.lru_cache()
-def _get_section_name() -> str:
-    if name := getenv("SECTION_NAME"):
-        return name
-
-    raise ValueError("No name found. Please set SECTION_NAME env variable")
+def get_slack_client() -> "SlackRequestClient":
+    return SlackRequestClient(
+        subdomain=CONFIG.get(ConfigKey.SUBDOMAIN),
+        token=get_slack_token(
+            subdomain=CONFIG.get(ConfigKey.SUBDOMAIN),
+            d_cookie=CONFIG.get(ConfigKey.D_COOKIE),
+        ),
+        cookie=CONFIG.get(ConfigKey.D_COOKIE),
+    )
 
 
-@functools.lru_cache()
-def _get_inc_regex() -> str:
-    if regex := getenv("INCIDENT_REGEX"):
-        return regex
+def ensure_configured(cmd):
+    @functools.wraps(cmd)
+    def wrapper(*args, **kwargs):
+        ctx = click.get_current_context()
+        if not CONFIG.is_configured():
+            click.echo("Configuration not found. Attempting to re-configure...")
+            reload_config(config=CONFIG, d_cookie_fetcher=fetch_d_cookie)
+        return ctx.invoke(cmd, *args, **kwargs)
 
-    raise ValueError("No regex found. Please set INCIDENT_REGEX env variable")
+    return wrapper
 
 
 ################################################################################
@@ -48,16 +52,16 @@ def _get_inc_regex() -> str:
 ################################################################################
 @click.group()
 def cli():
-    load_dotenv()
+    pass
 
 
 @cli.command()
-def parse_d_cookie():
-    click.echo(f"cookie: {get_slack_d_cookie()}")
-    click.echo(f"token: {get_slack_token()}")
+def configure():
+    reload_config(config=CONFIG, d_cookie_fetcher=fetch_d_cookie)
 
 
 @cli.command()
+@ensure_configured
 def hey():
     profile = get_slack_client().get("/api/users.profile.get")
     click.echo(
@@ -66,7 +70,8 @@ def hey():
 
 
 @cli.command()
-def incident_section():
+@ensure_configured
+def sort():
     client = get_slack_client()
 
     # Ensure the section exists (and get its ID)
@@ -75,10 +80,10 @@ def incident_section():
     sections = client.get("/api/users.channelSections.list")["channel_sections"]
     channel_id_to_section_id: dict[str, str] = {}
     channel_section_id: str | None = None
+    desired_section_name = CONFIG.get(ConfigKey.SECTION_NAME)
     for section in sections:
-        if section["name"] == _get_section_name():
+        if section["name"] == desired_section_name:
             channel_section_id = section["channel_section_id"]
-            click.echo(f"Found '{_get_section_name()}' section: {channel_section_id}")
 
             for channel_id in section["channel_ids_page"].get("channel_ids", []):
                 # It is unclear how to fetch _additional_ pages of channel_ids,
@@ -90,33 +95,43 @@ def incident_section():
         # This API is undocumented.
         channel_section_id = client.post(
             "/api/users.channelSections.create",
-            data=[("name", _get_section_name()), ("emoji", _get_section_emoji())],
+            data=[
+                ("name", desired_section_name),
+                ("emoji", CONFIG.get(ConfigKey.SECTION_EMOJI)),
+            ],
         )["channel_section_id"]
-        click.echo(f"Created '{_get_section_name()}' section: {channel_section_id}")
+        click.echo(f"Created '{desired_section_name}' section: {channel_section_id}")
+        click.echo(
+            "Slack defaults new sections to the very bottom of your sidebar. Reposition it as desired in the Slack client."
+        )
 
-    inc_regex = re.compile(_get_inc_regex())
+    channel_regex = re.compile(CONFIG.get(ConfigKey.CHANNEL_REGEX))
 
-    # Page through all available channels, adding any which are incidents _and_
-    # you're in them to the incident section
+    # Page through all available channels, moving any which meet the following
+    # criteria to the target section:
+    # * they are not already in a section
+    # * you are in them
+    # * they match the target regex
+    channels_moved: int = 0
     for page in client.paginated_get(
         "/api/conversations.list?exclude_archived=true&types=public_channel&limit=1000"
     ):
-        page_inc_channels = [
+        page_target_channels = [
             channel
             for channel in page["channels"]
             if channel["is_member"]
             and not channel_id_to_section_id.get(channel["id"])
-            and inc_regex.match(channel["name"])
+            and channel_regex.match(channel["name"])
         ]
 
-        if not page_inc_channels:
+        if not page_target_channels:
             time.sleep(0.25)  # slack has rate limits, let's naively wait a bit
             continue
 
         # Add the channels to the section
         # This API is undocumented.
         click.echo(
-            f"Moving channels to incident section: {[channel['name'] for channel in page_inc_channels]}"
+            f"Moving channels to '{desired_section_name}' section: {[channel['name'] for channel in page_target_channels]}"
         )
         client.post(
             "/api/users.channelSections.channels.bulkUpdate",
@@ -128,7 +143,7 @@ def incident_section():
                             {
                                 "channel_section_id": channel_section_id,
                                 "channel_ids": [
-                                    channel["id"] for channel in page_inc_channels
+                                    channel["id"] for channel in page_target_channels
                                 ],
                             }
                         ]
@@ -136,8 +151,13 @@ def incident_section():
                 )
             ],
         )
+        channels_moved += len(page_target_channels)
 
         time.sleep(0.25)  # slack has rate limits, let's naively wait a bit
+
+    click.echo(
+        f"Moved {channels_moved} channels to '{desired_section_name}' section (some may have already been assigned)"
+    )
 
 
 if __name__ == "__main__":

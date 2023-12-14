@@ -1,51 +1,43 @@
 import functools
 import re
-from os import getenv
+import time
+from urllib.parse import urlparse
 
 import click
 import requests
-
+from selenium import webdriver
 
 ################################################################################
 # Environment Access
 ################################################################################
-@functools.lru_cache()
-def _get_slack_subdomain():
-    if domain := getenv("SLACK_SUBDOMAIN"):
-        return domain
+# @functools.lru_cache()
+# def _get_slack_subdomain():
+#     if domain := getenv("SLACK_SUBDOMAIN"):
+#         return domain
 
-    raise ValueError("No domain found. Please set SLACK_SUBDOMAIN env variable")
+#     raise ValueError("No domain found. Please set SLACK_SUBDOMAIN env variable")
 
 
-@functools.lru_cache()
-def get_slack_d_cookie():
-    if cookie := getenv("SLACK_D_COOKIE"):
-        return cookie
+# @functools.lru_cache()
+# def get_slack_d_cookie():
+#     if cookie := getenv("SLACK_D_COOKIE"):
+#         return cookie
 
-    raise ValueError("No cookie found. Please set SLACK_D_COOKIE env variable.")
+#     raise ValueError("No cookie found. Please set SLACK_D_COOKIE env variable.")
 
 
 ################################################################################
 # Helpers
 ################################################################################
 @functools.lru_cache()
-def get_slack_client() -> "SlackRequestClient":
-    return SlackRequestClient(
-        subdomain=_get_slack_subdomain(),
-        token=get_slack_token(),
-        cookie=get_slack_d_cookie(),
-    )
-
-
-@functools.lru_cache()
-def get_slack_token():
+def get_slack_token(subdomain: str, d_cookie: str):
     """
     Get a session token based on the d cookie.
     https://papermtn.co.uk/retrieving-and-using-slack-cookies-for-authentication
     """
     response = requests.get(
-        f"https://{_get_slack_subdomain()}.slack.com",
-        cookies={"d": get_slack_d_cookie()},
+        f"https://{subdomain}.slack.com",
+        cookies={"d": d_cookie},
     )
     response.raise_for_status()
 
@@ -57,6 +49,24 @@ def get_slack_token():
     api_token = match.group(1)
 
     return api_token
+
+
+def fetch_d_cookie(subdomain: str) -> str:
+    driver = webdriver.Chrome()
+    driver.get(f"https://{subdomain}.slack.com")
+
+    while urlparse(driver.current_url).netloc != "app.slack.com":
+        time.sleep(0.1)
+
+    cookies = driver.get_cookies()
+    d_cookie = next(
+        cookie["value"]
+        for cookie in cookies
+        if cookie["domain"] == ".slack.com" and cookie["name"] == "d"
+    )
+    driver.quit()
+
+    return d_cookie
 
 
 ################################################################################
