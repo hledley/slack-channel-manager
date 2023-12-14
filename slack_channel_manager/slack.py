@@ -3,27 +3,8 @@ import re
 import time
 from urllib.parse import urlparse
 
-import click
 import requests
 from selenium import webdriver
-
-################################################################################
-# Environment Access
-################################################################################
-# @functools.lru_cache()
-# def _get_slack_subdomain():
-#     if domain := getenv("SLACK_SUBDOMAIN"):
-#         return domain
-
-#     raise ValueError("No domain found. Please set SLACK_SUBDOMAIN env variable")
-
-
-# @functools.lru_cache()
-# def get_slack_d_cookie():
-#     if cookie := getenv("SLACK_D_COOKIE"):
-#         return cookie
-
-#     raise ValueError("No cookie found. Please set SLACK_D_COOKIE env variable.")
 
 
 ################################################################################
@@ -43,8 +24,7 @@ def get_slack_token(subdomain: str, d_cookie: str):
 
     match = re.search(r'"api_token":"([^"]+)"', response.text)
     if not match:
-        click.echo("No api_token found in response")
-        return 1
+        raise ValueError("No api_token found in response")
 
     api_token = match.group(1)
 
