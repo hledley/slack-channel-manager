@@ -20,3 +20,13 @@ documentation. It may break at any time.
 
 No guarantee of CLI-command level stability is offered between various commits
 to this tool.
+
+## ⚠️ avoid Slack account takeovers
+
+When you configure this tool, it fetches a potentially long-lived slack session
+cookie and stores it in a file in this directory called `secret_config.json`.
+Anyone with access to that cookie may interact with Slack on your behalf.
+
+If you lose control of the file containing that cookie, or if someone else gains
+access to is, [sign out of all Slack sessions](https://slack.com/help/articles/214613347-Sign-out-of-Slack)
+immediately.
