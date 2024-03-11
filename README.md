@@ -21,6 +21,14 @@ documentation. It may break at any time.
 No guarantee of CLI-command level stability is offered between various commits
 to this tool.
 
+> [!Note]
+> **Known issues** that have been reported:
+> - _Slack client refresh:_ some users report that running the manager causes
+>   their desktop slack client to fully reload. This may be related to
+>   user-level themes.
+> - _Channel section re-creation attempts:_ some users reported attempts to
+>   re-create the managed section when it already exists.
+
 ## ⚠️ avoid Slack account takeovers
 
 When you configure this tool, it fetches a potentially long-lived slack session
