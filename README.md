@@ -30,3 +30,22 @@ Anyone with access to that cookie may interact with Slack on your behalf.
 If you lose control of the file containing that cookie, or if someone else gains
 access to is, [sign out of all Slack sessions](https://slack.com/help/articles/214613347-Sign-out-of-Slack)
 immediately.
+
+## set up `cron`
+
+This tool can be run in a cron to auto-sort your channels every few minutes.
+**Before setting up a cron, ensure the script is configured (above) and run it
+at least once locally.** To test your setup, run:
+
+```sh
+bin/run-in-poetry.sh
+```
+
+...if you see a successful output, you may proceed.
+
+To configure the cron, edit your crontab file (`crontab -e`) to include an entry
+like:
+
+```txt
+*/5 * * * * <absolute-path-to-this-repo>/bin/run-in-poetry.sh >>~/cron-stdout.log 2>>~/cron-stderr.log
+```
