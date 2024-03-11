@@ -36,7 +36,7 @@ cookie and stores it in a file in this directory called `secret_config.json`.
 Anyone with access to that cookie may interact with Slack on your behalf.
 
 If you lose control of the file containing that cookie, or if someone else gains
-access to is, [sign out of all Slack sessions](https://slack.com/help/articles/214613347-Sign-out-of-Slack)
+access to it, [sign out of all Slack sessions](https://slack.com/help/articles/214613347-Sign-out-of-Slack)
 immediately.
 
 ## set up `cron`
